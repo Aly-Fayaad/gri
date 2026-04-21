@@ -140,74 +140,74 @@ exports.restrictTo = (...roles) => {
 //   });
 // };
 
-exports.forgotPassword = async (req, res) => {
-  try {
-    // 1) Get user based on POSTed email
-    const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(404).json({
-        status: "fail",
-        message: "There is no user with that email address.",
-      });
-    }
+// exports.forgotPassword = async (req, res) => {
+//   try {
+//     // 1) Get user based on POSTed email
+//     const user = await User.findOne({ email: req.body.email });
+//     if (!user) {
+//       return res.status(404).json({
+//         status: "fail",
+//         message: "There is no user with that email address.",
+//       });
+//     }
 
-    // 2) Generate reset token
-    const resetToken = user.createPasswordResetToken();
-    await user.save({ validateBeforeSave: false });
+//     // 2) Generate reset token
+//     const resetToken = user.createPasswordResetToken();
+//     await user.save({ validateBeforeSave: false });
 
-    // 3) Send token back to client
-    const resetURL = `${req.protocol}://${req.get("host")}/api/v1/users/resetPassword/${resetToken}`;
+//     // 3) Send token back to client
+//     const resetURL = `${req.protocol}://${req.get("host")}/api/v1/users/resetPassword/${resetToken}`;
 
-    res.status(200).json({
-      status: "success",
-      message: "Token sent to email!",
-      resetURL,
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: "error",
-      message:
-        "There was an error sending the password reset token. Please try again later.",
-    });
-  }
-};
+//     res.status(200).json({
+//       status: "success",
+//       message: "Token sent to email!",
+//       resetURL,
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       status: "error",
+//       message:
+//         "There was an error sending the password reset token. Please try again later.",
+//     });
+//   }
+// };
 
-exports.resetPassword = async (req, res) => {
-  try {
-    const hashedToken = require("crypto")
-      .createHash("sha256")
-      .update(req.params.token)
-      .digest("hex");
+// exports.resetPassword = async (req, res) => {
+//   try {
+//     const hashedToken = require("crypto")
+//       .createHash("sha256")
+//       .update(req.params.token)
+//       .digest("hex");
 
-    const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: Date.now() },
-    });
+//     const user = await User.findOne({
+//       passwordResetToken: hashedToken,
+//       passwordResetExpires: { $gt: Date.now() },
+//     });
 
-    if (!user) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Token is invalid or has expired.",
-      });
-    }
+//     if (!user) {
+//       return res.status(400).json({
+//         status: "fail",
+//         message: "Token is invalid or has expired.",
+//       });
+//     }
 
-    user.password = req.body.password;
-    user.passwordConfirm = req.body.passwordConfirm;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    user.passwordChangedAt = Date.now() - 1000;
-    await user.save();
+//     user.password = req.body.password;
+//     user.passwordConfirm = req.body.passwordConfirm;
+//     user.passwordResetToken = undefined;
+//     user.passwordResetExpires = undefined;
+//     user.passwordChangedAt = Date.now() - 1000;
+//     await user.save();
 
-    const token = signToken(user._id);
+//     const token = signToken(user._id);
 
-    res.status(200).json({
-      status: "success",
-      token,
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: "error",
-      message: "Unable to reset password. Please try again later.",
-    });
-  }
-};
+//     res.status(200).json({
+//       status: "success",
+//       token,
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       status: "error",
+//       message: "Unable to reset password. Please try again later.",
+//     });
+//   }
+// };
