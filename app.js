@@ -1,11 +1,16 @@
+require('dotenv').config({ path: './config.env' });
 const express = require('express');
 const app = express();
-
+const globalErrorHandler = require('./middlewares/globalError');
+const AppError = require('./utils/appError');
 const userRouter = require('./routes/userRoute');
+const AuthRouter = require('./routes/authRoute')
 
 app.use(express.json()); // Middleware to parse JSON bodies
-app.use('/api/v1/users', userRouter); // Mount the user router at the specified path
 
+app.use('/api/auth', AuthRouter); // Mount auth routes
+app.use('/api/users', userRouter); // Mount user routes
+app.use(express.urlencoded({ extended: true }));
 
 
 app.get('/', (req, res) => {
@@ -14,5 +19,10 @@ app.get('/', (req, res) => {
   });
 });
 
+app.use( (req,res,next) => {
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
+})
+
+app.use(globalErrorHandler);
 
 module.exports = app;

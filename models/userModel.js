@@ -23,18 +23,21 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Password is required'],
     minlength: 6, // Basic security enforcement
     select: false // Exclude password from query results by default
+  }
+   ,  // Application Logic
+  isConfirmed:{
+    type: Boolean,
+    default: false,
   },
-  passwordConfirm:{
+  role:{
     type: String,
-    required: [true, 'Please confirm your password'],
-    validate: {
-      validator: function(el) {
-        return el === this.password;
-      },
-      message: 'Passwords do not match'
-    }
-
-  },  // Application Logic
+    enum: ['user', 'admin'],
+    default: 'user',
+  },
+  confirmOTP: String,
+  confirmationExpires: Date,  
+  passwordResetToken: String,
+  passwordResetExpires: Date,
   passwordChangedAt: Date,
   
 }, { 
@@ -49,9 +52,6 @@ userSchema.pre('save', async function() {
 
   // 2. Hash the password
   this.password = await bcrypt.hash(this.password, 12);
-
-  // 3. Remove passwordConfirm from the database
-  this.passwordConfirm = undefined;
   
 });
 
@@ -61,6 +61,20 @@ userSchema.methods.changedPasswordAfter = function(JWTTimestamp){
         return JWTTimestamp < changedTimestamp;
     }
     return false;
+};
+
+
+userSchema.methods.createPasswordResetToken = function() {
+  const resetToken = crypto.randomBytes(32).toString("hex");
+
+  this.passwordResetToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+
+  return resetToken;
 };
 
 
