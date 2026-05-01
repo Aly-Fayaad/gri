@@ -2,6 +2,7 @@ const User = require('../models/userModel');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const {promisify} = require('util');
+const catchAsync = require('../utils/catchAsync');
 
 
 exports.getMe = async (req, res)=>{
@@ -24,3 +25,10 @@ exports.getMe = async (req, res)=>{
         });
     }
 }
+
+exports.getAllUsers = catchAsync(async (req ,res, next) =>{
+    
+    const users = await User.find(); // Fetches every record from the database
+        res.status(200).json(users);    // Sends back the list with a 200 OK status
+    
+})

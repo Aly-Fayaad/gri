@@ -54,6 +54,7 @@ exports.confirmEmail = catchAsync(async (req,res,next) => {
   let findUser = await User.findOne({email})
   if(!findUser) return next(new AppError("email not found please signup!",400))
   
+
   // check if account already active
   if(findUser.isConfirmed) return next(new AppError("email is already active!",400))
     console.log(confirmOTP)
@@ -67,6 +68,7 @@ exports.confirmEmail = catchAsync(async (req,res,next) => {
     return next(new AppError("OTP is expired or invalid, please request a new one", 400));
   }
 
+
   const check = await bcrypt.compare(confirmOTP, findUser.confirmOTP)
   if(!check) return next(new AppError("OTP is invalid please try again!",400))
 
@@ -76,9 +78,12 @@ exports.confirmEmail = catchAsync(async (req,res,next) => {
     { new: true }
   )
 
+  const token = signToken(findUser._id);
+
   res.status(201).json({
     status: "success",
     message: "Email confirmed successfully",
+    token,
     user
   })
 })
