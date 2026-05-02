@@ -1,286 +1,223 @@
-const axios = require('axios');
-const UTIF = require('utif');
+const axios    = require('axios');
+const GeoTIFF  = require('geotiff');
 
-const CLIENT_ID = 'sh-969d4c9e-cf59-40b1-be2b-059d677e8a7d';
+const CLIENT_ID     = 'sh-969d4c9e-cf59-40b1-be2b-059d677e8a7d';
 const CLIENT_SECRET = '588nit4RWUceJZVghrdisR3k06wvvNvx';
 
-// Default evalscript to get all needed bands
-const DEFAULT_EVALSCRIPT = `//VERSION=3
+const BANDS = ['B02','B03','B04','B05','B06','B08','B11','B12'];
+
+// One evalscript per band — each returns a single-band TIFF (guaranteed 1 page, SPP=1)
+function makeEvalscript(band) {
+  return `//VERSION=3
 function setup() {
   return {
-    input: [{ 
-      bands: ["B02", "B03", "B04", "B05", "B06", "B08", "B11", "B12"], 
-      units: "REFLECTANCE" 
-    }],
-    output: { bands: 8 }
+    input: [{ bands: ["${band}"], units: "REFLECTANCE" }],
+    output: { bands: 1, sampleType: "FLOAT32" }
   };
 }
-function evaluatePixel(sample) {
-  return [sample.B02, sample.B03, sample.B04, sample.B05, sample.B06, sample.B08, sample.B11, sample.B12];
-}`;
+function evaluatePixel(s) { return [s.${band}]; }`;
+}
 
+// =======================
+// AUTH
+// =======================
 async function getToken() {
-  const response = await axios.post(
+  const res = await axios.post(
     'https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token',
     new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
     }),
-    {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }
+    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
   );
-  
-  if (!response.data.access_token) {
-    throw new Error('Failed to get token');
-  }
-  
-  return response.data.access_token;
+  if (!res.data.access_token) throw new Error('No token');
+  return res.data.access_token;
 }
 
-/**
- * Get computed bands from Sentinel-2 for multiple dates
- * @param {Array} bbox - Bounding box [minX, minY, maxX, maxY]
- * @param {string} startDate - Start date in YYYY-MM-DD format
- * @returns {Promise<Array>} - Array of band objects for each date
- */
+// =======================
+// MAIN
+// =======================
 async function getComputedBands(bbox, startDate) {
   try {
-    const token = await getToken();
-    
-    // Generate 4 dates with 15-day intervals
-    const dates = generateDateIntervals(startDate, 4, 15);
-    
-    console.log(`📡 Fetching bands for ${dates.length} dates...`);
-    
-    // Fetch bands for each date
-    const results = [];
+    const token    = await getToken();
+    const dates    = generateDateIntervals(startDate, 4, 15);
+    const results  = [];
     const failures = [];
+
     for (let i = 0; i < dates.length; i++) {
       const date = dates[i];
-      console.log(`  Processing ${date} (${i+1}/${dates.length})...`);
-      
-      const response = await fetchBandsForDate(token, bbox, date);
-      if (response.ok) {
-        results.push({
-          date: date,
-          bands: response.bands,
-          index: i
-        });
+      console.log(`📡 ${date} (${i + 1}/${dates.length})`);
+
+      const res = await fetchAllBandsForDate(token, bbox, date);
+
+      if (res.ok && res.bands) {
+        console.log('   ✔ bands:', res.bands);
+        results.push({ date, bands: res.bands, index: i });
       } else {
-        failures.push({ date, error: response.error });
+        console.log(`   ✗ failed: ${res.error}`);
+        failures.push({ date, error: res.error });
       }
     }
 
-    if (results.length === 0) {
-      return {
-        success: false,
-        error: `No usable Sentinel scenes found. ${failures[0]?.error || 'Unknown fetch error'}`,
-        failures,
-        bbox,
-        startDate
-      };
+    if (!results.length) {
+      return { success: false, error: 'No valid Sentinel data', failures };
     }
-    
-    return {
-      success: true,
-      bbox: bbox,
-      startDate: startDate,
-      images: results,
-      imageCount: results.length,
-      failures,
-      timestamp: new Date().toISOString()
-    };
-    
-  } catch (error) {
-    console.error('Error getting computed bands:', error.message);
-    if (error.response) {
-      console.error('Status:', error.response.status);
-      console.error('Details:', error.response.data);
-    }
-    return {
-      success: false,
-      error: error.message,
-      bbox: bbox
-    };
+
+    return { success: true, images: results, imageCount: results.length, failures, timestamp: new Date().toISOString() };
+
+  } catch (err) {
+    console.error(err);
+    return { success: false, error: err.message };
   }
 }
 
-/**
- * Fetch bands for a specific date
- */
-async function fetchBandsForDate(token, bbox, date) {
+// =======================
+// FETCH ALL 8 BANDS FOR ONE DATE
+// One request per band — avoids any multi-band TIFF layout ambiguity
+// =======================
+async function fetchAllBandsForDate(token, bbox, date) {
+  const from = new Date(date);
+  const to   = new Date(date);
+  from.setDate(from.getDate() - 15);
+  to.setDate(to.getDate()   + 15);
+
+  const { width, height } = computeDimensionsForBBox(bbox);
+  const means = {};
+
+  for (const band of BANDS) {
+    const result = await fetchSingleBand(token, bbox, band, from, to, width, height);
+    if (!result.ok) {
+      return { ok: false, error: `Band ${band}: ${result.error}` };
+    }
+    means[band] = result.mean;
+    console.log(`   ${band}: ${result.mean.toFixed(5)}`);
+  }
+
+  return { ok: true, bands: means };
+}
+
+// =======================
+// FETCH ONE BAND → mean reflectance value
+// =======================
+async function fetchSingleBand(token, bbox, band, from, to, width, height) {
   try {
-    // Use a wider window around the target date so we can get the nearest
-    // available scene instead of requiring an exact acquisition day.
-    const fromDate = new Date(date);
-    const toDate = new Date(date);
-    fromDate.setDate(fromDate.getDate() - 10);
-    toDate.setDate(toDate.getDate() + 10);
-
-    const fromISO = `${fromDate.toISOString().split('T')[0]}T00:00:00Z`;
-    const toISO = `${toDate.toISOString().split('T')[0]}T23:59:59Z`;
-
-    const { width, height } = computeDimensionsForBBox(bbox);
-
     const payload = {
       input: {
         bounds: {
-          bbox: bbox,
-          properties: { 
-            crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' 
-          }
+          bbox,
+          properties: { crs: 'http://www.opengis.net/def/crs/EPSG/0/4326' }
         },
         data: [{
           type: 'sentinel-2-l2a',
           dataFilter: {
-            timeRange: {
-              from: fromISO,
-              to: toISO
-            },
-            maxCloudCoverage: 40,
-            mosaickingOrder: 'mostRecent'
+            timeRange: { from: from.toISOString(), to: to.toISOString() },
+            maxCloudCoverage: 50,
+            mosaickingOrder: 'leastCC'
           }
         }]
       },
       output: {
-        width,
-        height,
-        responses: [{ 
-          identifier: 'default', 
-          format: { type: 'image/tiff' } 
+        width, height,
+        responses: [{
+          identifier: 'default',
+          format: { type: 'image/tiff' }
         }]
       },
-      evalscript: DEFAULT_EVALSCRIPT
+      evalscript: makeEvalscript(band)
     };
-    
-    const response = await axios.post(
+
+    const res = await axios.post(
       'https://sh.dataspace.copernicus.eu/api/v1/process',
       payload,
       {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'image/tiff'
         },
         responseType: 'arraybuffer'
       }
     );
-    
-    // Parse the response to extract band values
-    const bands = parseBandResponse(response.data);
-    return { ok: true, bands };
-    
-  } catch (error) {
-    console.error(`  ⚠️ Failed to fetch bands for ${date}:`, error.message);
-    if (error.response?.data) {
-      console.error(
-        `  ↳ Sentinel details for ${date}:`,
-        JSON.stringify(error.response.data)
-      );
+
+    if (res.status !== 200) {
+      const txt = Buffer.from(res.data).toString('utf8');
+      return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
     }
-    const details =
-      error.response?.data?.message ||
-      error.response?.data?.error?.message ||
-      error.response?.statusText ||
-      error.message ||
-      'Unknown Sentinel error';
-    return { ok: false, error: details };
+
+    const mean = await extractMeanFromTiff(res.data);
+    if (mean === null) return { ok: false, error: 'all pixels no-data' };
+
+    return { ok: true, mean };
+
+  } catch (err) {
+    if (err.response?.data) {
+      const txt = Buffer.from(err.response.data).toString('utf8');
+      try {
+        const p = JSON.parse(txt);
+        return { ok: false, error: p.error?.message || p.message || txt.slice(0, 200) };
+      } catch {
+        return { ok: false, error: txt.slice(0, 200) };
+      }
+    }
+    return { ok: false, error: err.message };
   }
 }
 
+// =======================
+// READ SINGLE-BAND TIFF → mean float value
+// =======================
+async function extractMeanFromTiff(data) {
+  try {
+    const ab    = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    const tiff  = await GeoTIFF.fromArrayBuffer(ab);
+    const image = await tiff.getImage(0);
+
+    // readRasters() returns array of typed arrays, one per band
+    const rasters = await image.readRasters();
+    const raster  = rasters[0]; // single band
+
+    let sum = 0, count = 0;
+    for (let i = 0; i < raster.length; i++) {
+      const v = raster[i];
+      if (isNaN(v) || v === 0) continue;
+      sum += v;
+      count++;
+    }
+
+    if (count === 0) return null;
+
+    const mean = sum / count;
+    return mean > 2.0 ? mean / 10000 : mean; // DN → reflectance if needed
+  } catch (err) {
+    console.error('TIFF parse error:', err.message);
+    return null;
+  }
+}
+
+// =======================
+// DIMENSIONS
+// =======================
 function computeDimensionsForBBox(bbox) {
   const [minLon, minLat, maxLon, maxLat] = bbox;
-  const centerLat = (minLat + maxLat) / 2;
-
-  // Rough meter conversions for WGS84 degrees.
-  const metersPerDegLat = 111320;
-  const metersPerDegLon = 111320 * Math.cos((centerLat * Math.PI) / 180);
-
-  const widthMeters = Math.abs(maxLon - minLon) * metersPerDegLon;
-  const heightMeters = Math.abs(maxLat - minLat) * metersPerDegLat;
-
-  // Keep resolution comfortably below 1500 m/px Sentinel limit.
-  const targetMetersPerPixel = 500;
-  const minPixels = 16;
-
-  const width = Math.max(minPixels, Math.ceil(widthMeters / targetMetersPerPixel));
-  const height = Math.max(minPixels, Math.ceil(heightMeters / targetMetersPerPixel));
-
-  return { width, height };
-}
-
-/**
- * Generate date intervals
- * @param {string} startDate - Start date in YYYY-MM-DD
- * @param {number} count - Number of dates to generate
- * @param {number} intervalDays - Interval in days between dates
- * @returns {Array} Array of dates in YYYY-MM-DD format
- */
-function generateDateIntervals(startDate, count, intervalDays) {
-  const dates = [];
-  const currentDate = new Date(startDate);
-  
-  for (let i = 0; i < count; i++) {
-    const year = currentDate.getFullYear();
-    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-    const day = String(currentDate.getDate()).padStart(2, '0');
-    dates.push(`${year}-${month}-${day}`);
-    
-    // Move to next interval
-    currentDate.setDate(currentDate.getDate() + intervalDays);
-  }
-  
-  return dates;
-}
-
-/**
- * Parse the API response to extract band values
- */
-function parseBandResponse(data) {
-  const bands = {
-    B02: null, // Blue
-    B03: null, // Green
-    B04: null, // Red
-    B05: null, // Red Edge 1
-    B06: null, // Red Edge 2
-    B08: null, // NIR
-    B11: null, // SWIR 1
-    B12: null  // SWIR 2
+  const mPerDegLon = 111320 * Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  return {
+    width:  Math.max(32, Math.round((maxLon - minLon) * mPerDegLon / 20)),
+    height: Math.max(32, Math.round((maxLat - minLat) * 111320    / 20))
   };
-  
-  try {
-    // TIFF binary parsing path
-    if (data && (data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
-      const buffer = data instanceof ArrayBuffer ? data : data.buffer;
-      const ifds = UTIF.decode(buffer);
-      if (!ifds || ifds.length === 0) return bands;
+}
 
-      UTIF.decodeImage(buffer, ifds[0]);
-      const raster = ifds[0].data;
-      const samplesPerPixel = ifds[0]['t277'] || 1;
-      if (!raster || samplesPerPixel < 8) return bands;
-
-      // Pick center pixel to reduce edge/no-data effects.
-      const width = ifds[0].width;
-      const height = ifds[0].height;
-      const centerIndex = (Math.floor(height / 2) * width + Math.floor(width / 2)) * samplesPerPixel;
-
-      bands.B02 = raster[centerIndex + 0] ?? null;
-      bands.B03 = raster[centerIndex + 1] ?? null;
-      bands.B04 = raster[centerIndex + 2] ?? null;
-      bands.B05 = raster[centerIndex + 3] ?? null;
-      bands.B06 = raster[centerIndex + 4] ?? null;
-      bands.B08 = raster[centerIndex + 5] ?? null;
-      bands.B11 = raster[centerIndex + 6] ?? null;
-      bands.B12 = raster[centerIndex + 7] ?? null;
-    }
-  } catch (error) {
-    console.error('Error parsing band response:', error);
+// =======================
+// DATE GENERATOR
+// =======================
+function generateDateIntervals(startDate, count, step) {
+  const dates = [];
+  const d = new Date(startDate);
+  for (let i = 0; i < count; i++) {
+    dates.push(d.toISOString().split('T')[0]);
+    d.setDate(d.getDate() + step);
   }
-//   console.log(bands)
-  return bands;
+  return dates;
 }
 
 module.exports = { getComputedBands };
