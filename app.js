@@ -1,4 +1,4 @@
-require('dotenv').config({ path: './config.env' });
+require('dotenv').config({ path: './config.env', debug: false });
 const express = require('express');
 const app = express();
 const globalErrorHandler = require('./middlewares/globalError');
