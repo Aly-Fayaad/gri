@@ -1,4 +1,6 @@
 require('dotenv').config({ path: './config.env', debug: false });
+const dns = require('node:dns');
+dns.setDefaultResultOrder('ipv4first');
 const app = require('./app');
 const mongoose = require('mongoose');
 
