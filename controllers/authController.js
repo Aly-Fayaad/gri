@@ -16,6 +16,7 @@ const signToken = (id) => {
 
 exports.signup = catchAsync(async (req,res,next) => {
   // check email if exists
+ 
   let {email,password} = req.body
   if (!email || !password) {
     return next(new AppError("Please provide email and password", 400));
@@ -92,6 +93,7 @@ exports.confirmEmail = catchAsync(async (req,res,next) => {
 
 
 exports.login = catchAsync(async (req, res, next) => {
+  console.log(req.body)
   const { email, password } = req.body;
 
   // 1) check if email and password exist
@@ -117,6 +119,7 @@ exports.login = catchAsync(async (req, res, next) => {
     token,
   });
 });
+
 
 exports.protect = catchAsync(async (req, res, next) => {
   // 1) Getting token and check if it exists

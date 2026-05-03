@@ -32,3 +32,14 @@ exports.getAllUsers = catchAsync(async (req ,res, next) =>{
         res.status(200).json(users);    // Sends back the list with a 200 OK status
     
 })
+
+exports.deleteUser = catchAsync(async (req, res, next) =>{
+    const user = await User.findByIdAndDelete(req.params.id);
+    if(!user){
+        return next(new AppError("the user with this id doesn't exist"))
+    }
+    res.status(200).json({
+        status: 'success',
+        data: null
+    })
+})

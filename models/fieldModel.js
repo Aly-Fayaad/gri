@@ -2,7 +2,6 @@ const mongoose = require("mongoose");
 
 const AREA_UNITS = ["faddan", "qirat", "hectare", "m2"];
 const CROP_TYPES = ["rice", "wheat", "corn", "cotton", "vegetables", "other"];
-// const IRRIGATION_SOURCES = ["canal", "groundwater", "unknown"];
 
 const fieldSchema = new mongoose.Schema(
   {
@@ -43,7 +42,15 @@ const fieldSchema = new mongoose.Schema(
       required: true,
     },
 
+    last_insight: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
 
+    insighted_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true, // adds createdAt and updatedAt

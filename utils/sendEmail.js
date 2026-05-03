@@ -1,42 +1,61 @@
 const nodemailer = require("nodemailer");
+const AppError = require("./appError");
 
-const emailUser = process.env.EMAIL_USER
-const emailPassword = process.env.EMAIL_PASSWORD;
+let transporter;
 
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false, // use STARTTLS (upgrade connection to TLS after connecting)
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+const getTransporter = () => {
+  if (transporter) return transporter;
+
+  const emailUser = process.env.EMAIL_USER;
+  const emailPassword = process.env.EMAIL_PASSWORD;
+
+  if (!emailUser || !emailPassword) {
+    throw new AppError(
+      "Email credentials are missing. Set EMAIL_USER and EMAIL_PASSWORD in config.env",
+      500
+    );
+  }
+
+  transporter = nodemailer.createTransport({
+    service: "gmail",
     auth: {
       user: emailUser,
       pass: emailPassword,
     },
   });
 
-module.exports = async (email,sub,text="",html="") => {
-  if (!emailUser || !emailPassword) {
-    throw new Error(
-      "Email credentials are missing. Set EMAIL_USER and EMAIL_PASSWORD in config.env"
-    );
-  }
+  return transporter;
+};
 
-  const mailPromise = transporter.sendMail({
-    from: emailUser,
+module.exports = async (email, sub, text = "", html = "") => {
+  const currentTransporter = getTransporter();
+  const currentEmailUser = process.env.EMAIL_USER;
+
+  const mailPromise = currentTransporter.sendMail({
+    from: currentEmailUser,
     to: email,
     subject: sub,
-    text: text, 
-    html: html, 
+    text: text,
+    html: html,
   });
 
+  let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("Email service timeout")), 15000);
+    timeoutId = setTimeout(() => {
+      console.error("❌ Email service timeout for:", email);
+      reject(new AppError("Email service timeout", 504));
+    }, 30000); // Increased to 30s
   });
 
-  const info = await Promise.race([mailPromise, timeoutPromise]);
-  console.log("Message sent:", info.messageId);
-  return info
+  try {
+    const info = await Promise.race([mailPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
+    console.log("✅ Message sent successfully:", info.messageId);
+    return info;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error("❌ Error sending email:", error.message);
+    throw error;
+  }
 };
 
