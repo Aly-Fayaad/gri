@@ -41,7 +41,7 @@ exports.signup = catchAsync(async (req,res,next) => {
   //   "",
   //   `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
   // )
-  const user = await User.create(req.body);
+  const user = await User.create({...req.body,isConfirmed:true});
   const token = signToken(user._id);
   res.status(201).json({
     status: "success",
