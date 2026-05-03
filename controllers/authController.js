@@ -25,26 +25,29 @@ exports.signup = catchAsync(async (req,res,next) => {
   if(findUser) return next(new AppError("Email already exists",400))
 
   // generate and hash otp
-  const otp = customAlphabet("0123456789", 6)();
-  const confirmationExpires = Date.now() + 10 * 60 * 1000;
-  const hashedOTP = await bcrypt.hash(otp, 12);
-  await User.create({
-    ...req.body,
-    confirmOTP: hashedOTP,
-    confirmationExpires,
-  });
+  // const otp = customAlphabet("0123456789", 6)();
+  // const confirmationExpires = Date.now() + 10 * 60 * 1000;
+  // const hashedOTP = await bcrypt.hash(otp, 12);
+  // await User.create({
+  //   ...req.body,
+  //   confirmOTP: hashedOTP,
+  //   confirmationExpires,
+  // });
 
-  // Send email in the background (don't await) to prevent production timeouts
-  await sendEmail(
-    email,
-    "Confirm your email",
-    "",
-    `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
-  )
-  
+  // // Send email in the background (don't await) to prevent production timeouts
+  // await sendEmail(
+  //   email,
+  //   "Confirm your email",
+  //   "",
+  //   `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
+  // )
+  const user = await User.create(req.body);
+  const token = signToken(user._id);
   res.status(201).json({
     status: "success",
-    message: "User created successfully, check your email for confirmation",
+    message: "User created successfully welcom to agri sense",
+    token,
+    user
   })
 })
 
