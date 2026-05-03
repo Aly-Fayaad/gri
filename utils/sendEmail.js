@@ -27,9 +27,11 @@ const getTransporter = () => {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000,
+    debug: true, // Enable debug output
+    logger: true, // Log to console
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
   });
 
   return transporter;
@@ -51,8 +53,8 @@ module.exports = async (email, sub, text = "", html = "") => {
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
       console.error("❌ Email service timeout for:", email);
-      reject(new AppError("Email service timeout", 504));
-    }, 30000); // Increased to 30s
+      reject(new AppError("Email service timeout (Server did not respond in 45s)", 504));
+    }, 45000); // 45s
   });
 
   try {

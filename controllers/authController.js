@@ -41,7 +41,7 @@ exports.signup = catchAsync(async (req,res,next) => {
     "",
     `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
   ).catch(err => {
-    console.error("🔥 Background SendEmail Error:", err.message);
+    console.error("🔥 Background SendEmail Error Full Object:", err);
   });
   
   res.status(201).json({
