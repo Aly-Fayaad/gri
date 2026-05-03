@@ -22,6 +22,9 @@ const getTransporter = () => {
       user: emailUser,
       pass: emailPassword,
     },
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 
   return transporter;

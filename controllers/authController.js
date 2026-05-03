@@ -34,12 +34,15 @@ exports.signup = catchAsync(async (req,res,next) => {
     confirmationExpires,
   });
 
-  await sendEmail(
+  // Send email in the background (don't await) to prevent production timeouts
+  sendEmail(
     email,
     "Confirm your email",
     "",
     `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
-  );
+  ).catch(err => {
+    console.error("🔥 Background SendEmail Error:", err.message);
+  });
   
   res.status(201).json({
     status: "success",
