@@ -27,6 +27,7 @@ const getTransporter = () => {
     tls: {
       rejectUnauthorized: false,
     },
+    family: 4, // Force IPv4
     debug: true, // Enable debug output
     logger: true, // Log to console
     connectionTimeout: 20000,
