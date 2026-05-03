@@ -1,0 +1,114 @@
+# ROOT POINT - AGRI API DOCUMENTATION
+
+## base URL: http://localhost:3000 (Local) or your Railway URL
+
+---
+
+## 1. Authentication (/api/auth)
+
+### POST /signup
+- Body: { "name": "...", "email": "...", "password": "...", "crop_type": "..." }
+- Action: Creates a user and sends a 6-digit OTP to their email.
+- Note: Account is inactive until confirmed.
+
+### POST /confirm-email
+- Body: { "email": "...", "confirmOTP": "123456" }
+- Action: Verifies the OTP and activates the account. Returns a JWT token.
+
+### POST /login
+- Body: { "email": "...", "password": "..." }
+- Action: Standard login. Returns a JWT token.
+
+### POST /forgot-password
+- Body: { "email": "..." }
+- Action: Sends a password reset link to the email.
+
+### PATCH /reset-password/:token
+- URL Param: token (from the email)
+- Body: { "password": "new_password" }
+- Action: Updates the password and logs the user in.
+
+---
+
+## 2. User Management (/api/users)
+
+### GET /me
+- Auth: Bearer Token
+- Action: Returns the profile of the currently logged-in user.
+
+### GET /
+- Auth: Bearer Token
+- Action: Returns a list of all users (Admin/Debug).
+
+### DELETE /:id
+- Auth: Bearer Token
+- Action: Deletes a user by ID.
+
+---
+
+## 3. Fields & Locations (/api/fields)
+
+### POST /
+- Auth: Bearer Token
+- Body: { 
+    "name": "Field A", 
+    "planting_date": "2024-03-01", 
+    "center_lat": 31.2, 
+    "center_lng": 30.5, 
+    "area_value": 5, 
+    "area_unit": "faddan", 
+    "crop_type": "rice" 
+  }
+- Action: Creates a field and automatically calculates its BBOX.
+
+### GET /
+- Auth: Bearer Token
+- Action: Returns a list of all fields belonging to the user, including center coordinates for map display.
+
+### DELETE /:id
+- Auth: Bearer Token
+- Action: Deletes the field and its associated location data.
+
+### GET /get-insights/:id
+- Auth: Bearer Token
+- Action: Returns satellite-based AI insights for the field.
+- Caching: Data is cached for 4 days. If requested within 4 days, API returns cached data (`cached: true`).
+
+---
+
+## 4. FRONTEND GUIDE: Displaying Insights (Traffic Light System)
+
+When you receive a response from `/get-insights/:id`, use the following rules to build the "Traffic Light" UI:
+
+### A. Overall Alert Level
+The field `data.overall_alert` tells you the general status:
+- "green": Everything is fine. Display a green checkmark or "Healthy" badge.
+- "amber": Warning! Some issues detected. Display a yellow warning icon.
+- "red": Critical! Significant issues detected. Display a red alert icon.
+
+### B. Pixel Breakdown (Visual Map/Progress Bar)
+The `data.alert_counts` object can be used to show a distribution chart:
+- Red pixels = Percent of field in critical condition.
+- Amber pixels = Percent of field under stress.
+- Green pixels = Percent of field in good health.
+
+### C. Specific Category Details
+The `data.summary` object contains three categories. Each has a label and a percentage (`pct`).
+
+1. **Water Status (Irrigation)**
+   - "Well-irrigated" -> Green
+   - "Mild stress" -> Amber
+   - "Water stress" -> Red
+
+2. **Crop Health (Vegetation Index)**
+   - "Healthy" -> Green (Hypothetical)
+   - "Moderate" -> Amber
+   - "Stressed" -> Red
+
+3. **Salinity Risk (Soil)**
+   - "No salinity" -> Green
+   - "Salinity risk" -> Red
+
+### Recommended UI Component:
+Display these as progress bars or "Speedometer" dials. 
+Example: "Irrigation: 88% Well-irrigated (Green), 10% Water Stress (Red)"
