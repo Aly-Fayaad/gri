@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
    ,  // Application Logic
   isConfirmed:{
     type: Boolean,
-    default: false,
+    default: true,
   },
   role:{
     type: String,
