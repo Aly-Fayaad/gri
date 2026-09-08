@@ -1,4 +1,4 @@
-require('dotenv').config({ path: './config.env' });
+require('dotenv').config({ path: './config.env', debug: false });
 const express = require('express');
 const app = express();
 const globalErrorHandler = require('./middlewares/globalError');
@@ -6,15 +6,16 @@ const AppError = require('./utils/appError');
 const userRouter = require('./routes/userRoute');
 const AuthRouter = require('./routes/authRoute')
 const FieldRouter = require('./routes/fieldRoute')
+
 app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', AuthRouter); // Mount auth routes
 app.use('/api/users', userRouter); // Mount user routes
 app.use('/api/fields', FieldRouter); 
-app.use(express.urlencoded({ extended: true }));
 
 
-app.get('/', (req, res) => {
+app.get('/', (req, res) =>  {
   res.status(200).json({
     message: 'Welcome to the Agri API'
   });

@@ -16,6 +16,7 @@ const signToken = (id) => {
 
 exports.signup = catchAsync(async (req,res,next) => {
   // check email if exists
+ 
   let {email,password} = req.body
   if (!email || !password) {
     return next(new AppError("Please provide email and password", 400));
@@ -24,25 +25,29 @@ exports.signup = catchAsync(async (req,res,next) => {
   if(findUser) return next(new AppError("Email already exists",400))
 
   // generate and hash otp
-  const otp = customAlphabet("0123456789", 6)();
-  const confirmationExpires = Date.now() + 10 * 60 * 1000;
-  const hashedOTP = await bcrypt.hash(otp, 12);
-  await User.create({
-    ...req.body,
-    confirmOTP: hashedOTP,
-    confirmationExpires,
-  });
+  // const otp = customAlphabet("0123456789", 6)();
+  // const confirmationExpires = Date.now() + 10 * 60 * 1000;
+  // const hashedOTP = await bcrypt.hash(otp, 12);
+  // await User.create({
+  //   ...req.body,
+  //   confirmOTP: hashedOTP,
+  //   confirmationExpires,
+  // });
 
-  await sendEmail(
-    email,
-    "Confirm your email",
-    "",
-    `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
-  );
-  
+  // // Send email in the background (don't await) to prevent production timeouts
+  // await sendEmail(
+  //   email,
+  //   "Confirm your email",
+  //   "",
+  //   `<p>Your confirmation OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
+  // )
+  const user = await User.create(req.body);
+  const token = signToken(user._id);
   res.status(201).json({
     status: "success",
-    message: "User created successfully, check your email for confirmation",
+    message: "User created successfully welcom to agri sense",
+    token,
+    user
   })
 })
 
@@ -92,6 +97,7 @@ exports.confirmEmail = catchAsync(async (req,res,next) => {
 
 
 exports.login = catchAsync(async (req, res, next) => {
+  console.log(req.body)
   const { email, password } = req.body;
 
   // 1) check if email and password exist
@@ -117,6 +123,7 @@ exports.login = catchAsync(async (req, res, next) => {
     token,
   });
 });
+
 
 exports.protect = catchAsync(async (req, res, next) => {
   // 1) Getting token and check if it exists

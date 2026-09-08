@@ -14,9 +14,9 @@ router.get('/', authController.protect, userController.getAllUsers);
 // .get(authController.protect, userController.getAllUsers)
 // .post(authController.protect, authController.restrictTo('admin'), userController.createUser);
 
-// router.route('/:id')
+router.route('/:id')
+ .delete(authController.protect, userController.deleteUser);
 // .get(authController.protect, userController.getUser)
 // .patch(authController.protect, authController.restrictTo('admin'), userController.updateUser)
-// .delete(authController.protect, authController.restrictTo('admin'), userController.deleteUser);
 
 module.exports = router;

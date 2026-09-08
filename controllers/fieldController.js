@@ -1,62 +1,59 @@
 const Field = require('../models/fieldModel')
 const FieldLocation = require("../models/fieldLocation");
-const FieldSnapshot = require("../models/fieldSnapshot");
-
-const { getComputedBands } = require('../utils/sentinel');
-const { getModelFeatures, getAvailableModels } = require('../utils/trainingFeatures');
+const axios = require('axios')
 const catchAsync = require('../utils/catchAsync');
 const AppError = require('../utils/appError');
 
 
 
 exports.getInsights = catchAsync(async (req, res, next) => {
-  // Optional query params: ?bbox=minLon,minLat,maxLon,maxLat&startDate=YYYY-MM-DD
-  // Cairo area in correct order: [minLon, minLat, maxLon, maxLat]
-  const defaultBbox = [31.47, 30.56, 31.55, 30.62];
-  const bbox = req.query.bbox
-    ? req.query.bbox.split(',').map(Number)
-    : defaultBbox;
-  const startDate = req.query.startDate || '2026-06-01';
+  let id = req.params.id
 
-  if (!Array.isArray(bbox) || bbox.length !== 4 || bbox.some(Number.isNaN)) {
-    return next(
-      new AppError('Invalid bbox. Use: minLon,minLat,maxLon,maxLat', 400)
-    );
+  let field = await Field.findOne({ _id: id })
+  if (!field) {
+    return next(new AppError("the field with this id doesn't exist"))
   }
 
-  const [minLon, minLat, maxLon, maxLat] = bbox;
-  if (minLon >= maxLon || minLat >= maxLat) {
-    return next(
-      new AppError('Invalid bbox bounds. Ensure min values are less than max values.', 400)
-    );
+  // ── 4-Day Cache Check ─────────────────────────────────────────────────────
+  if (field.last_insight && field.insighted_at) {
+    const daysSinceLastInsight = (Date.now() - field.insighted_at) / (1000 * 60 * 60 * 24);
+    if (daysSinceLastInsight < 4) {
+      console.log(`🚀 Returning cached insight for field ${id} (last updated ${Math.round(daysSinceLastInsight)} days ago)`);
+      return res.status(200).json({
+        success: true,
+        cached: true,
+        data: field.last_insight
+      });
+    }
   }
 
-  const result = await getComputedBands(bbox, startDate);
-
-  if (!result.success) {
-    return next(new AppError(`Sentinel fetch failed: ${result.error}`, 502));
+  let location = await FieldLocation.findOne({ field: id })
+  if (!location) {
+    return next(new AppError("the location with this id doesn't exist"))
   }
 
-  if (!result.images || result.images.length === 0) {
-    return next(
-      new AppError('No satellite images found for this area/date range.', 404)
-    );
+  let bbox = location.bounding_box
+  const bboxArray = [bbox.west, bbox.south, bbox.east, bbox.north]
+
+  console.log(`🛰️ Fetching new insights from remote model for field ${id}...`);
+  let response = await axios.post("https://model-production-06a6.up.railway.app/predict/field_bbox", {
+    bbox: bboxArray
+  })
+
+  if (response.status !== 200) {
+    return next(new AppError("the response from the server is empty"))
   }
 
-  const models = getAvailableModels();
-  const waterStatus = getModelFeatures('water_status', result.images);
-  const cropHealth = getModelFeatures('crop_health', result.images);
-  const salinityRisk = getModelFeatures('salinity_risk', result.images);
+  // ── Update Field Document ───────────────────────────────────────────────
+  field.last_insight = response.data;
+  field.insighted_at = Date.now();
+  await field.save();
 
   res.status(200).json({
-    status: 'success',
-    models,
-    imageCount: result.imageCount,
-    dates: result.images.map((img) => img.date),
-    waterStatus,
-    cropHealth,
-    salinityRisk,
-  });
+    success: true,
+    cached: false,
+    data: response.data
+  })
 });
 
 
@@ -106,7 +103,6 @@ function deriveBoundingBox(lat, lng, areaValue, areaUnit) {
  *   area_value       : number   (required)
  *   area_unit        : string   (required) — faddan | qirat | hectare | m2
  *   crop_type        : string   (optional)
- *   irrigation_source: string   (optional)
  * }
  *
  * Auth: req.user._id must be set by your auth middleware
@@ -215,7 +211,6 @@ exports.deleteField = catchAsync(async(req, res) => {
       await Promise.all([
         Field.findByIdAndDelete(id),
         FieldLocation.deleteOne({ field: id }),
-        FieldSnapshot.deleteMany({ field: id }),
       ]);
 
       return res.status(200).json({
